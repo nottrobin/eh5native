@@ -1,0 +1,29 @@
+<html>
+  <head>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="jquery.html5fixes.js"></script>
+    <script type="text/javascript">
+        $(document).bind(
+            'ready',
+            function(readyevt) {
+                $('input').bind(
+                    'input',
+                    function(inputevt,difference) {
+                        $('div#output').append("fired ");
+                    }
+                )
+            }
+        );
+    </script>
+  </head>
+  
+  <body> 
+    <form name="fiddle">
+      <div>
+        <input type="number" name="hello" />
+      </div>
+    </form>
+    <div id="output">
+    </div>
+  </body>
+</html>
