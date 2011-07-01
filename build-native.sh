@@ -2,10 +2,10 @@
 # Config
 # --
 # Filenames
-base="eh5-base-native";
-complete="eh5-complete-native";
-baseLocal="eh5-base-native-local";
-completeLocal="eh5-complete-native-local";
+base="eh5-base";
+complete="eh5-complete";
+baseLocal="eh5-base-local";
+completeLocal="eh5-complete-local";
 # Modules location
 modulesPath="../yui3-gallery/build/";
 
@@ -14,9 +14,9 @@ echo "Starting process of creating native JS files.";
 echo "---";
 
 # Checks
-if [ ! -d js/backups ]; then
+if [ ! -d js/backup ]; then
   echo "Creating 'backup' directory";
-  mkdir -p js/backups;
+  mkdir -p js/backup;
 fi;
 
 if [ ! -e ../yui3-gallery ]; then
@@ -53,7 +53,7 @@ for fileName in ${jsFileNames[@]}; do
   echo "Processing "$fileName":";
   # Backup the old version
   if [ -e js/$fileName.js ]; then
-    echo -n "Backing up old file: js/"$fileName" to: js/backup"$fileName.`date +%Y-%m-%d.%H%M`.js" ... ";
+    echo -n "Backing up old file: js/"$fileName" to: js/backup/"$fileName.`date +%Y-%m-%d.%H%M`.js" ... ";
     mv js/$fileName.js js/backup/$fileName.`date +%Y-%m-%d.%H%M`.js
   fi;
   # Remove the old minified version

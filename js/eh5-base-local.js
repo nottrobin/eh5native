@@ -1,14 +1,3 @@
-/* -----------------
- * yui.js from Yahoo
- * ----------------/
-
-/*
-Copyright (c) 2010, Yahoo! Inc. All rights reserved.
-Code licensed under the BSD License:
-http://developer.yahoo.com/yui/license.html
-version: 3.3.0
-build: 3167
-*/
 /**
  * The YUI module contains the components required for building the YUI seed
  * file.  This includes the script loading mechanism, a simple queue, and
@@ -105,7 +94,7 @@ if (typeof YUI != 'undefined') {
 (function() {
 
     var proto, prop,
-        VERSION = '3.3.0',
+        VERSION = '@VERSION@',
         PERIOD = '.',
         BASE = 'http://yui.yahooapis.com/',
         DOC_LABEL = 'yui3-js-enabled',
@@ -269,7 +258,7 @@ proto = {
                 _uidx: 0,
                 _guidp: 'y',
                 _loaded: {},
-                serviced: {},
+                // serviced: {},
                 getBase: G_ENV && G_ENV.getBase ||
 
     function(srcPattern, comboPattern) {
@@ -540,6 +529,15 @@ proto = {
                         }
                     }
 
+                    if (mod.fn) {
+                        try {
+                            mod.fn(Y, name);
+                        } catch (e) {
+                            Y.error('Attach error: ' + name, e, name);
+                            return false;
+                        }
+                    }
+
                     if (use) {
                         for (j = 0; j < use.length; j++) {
                             if (!done[use[j]]) {
@@ -551,14 +549,7 @@ proto = {
                         }
                     }
 
-                    if (mod.fn) {
-                        try {
-                            mod.fn(Y, name);
-                        } catch (e) {
-                            Y.error('Attach error: ' + name, e, name);
-                            return false;
-                        }
-                    }
+
 
                 }
             }
@@ -610,7 +601,10 @@ proto = {
         var args = SLICE.call(arguments, 0),
             callback = args[args.length - 1],
             Y = this,
-            key;
+            i = 0,
+            name,
+            Env = Y.Env,
+            provisioned = true;
 
         // The last argument supplied to use can be a load complete callback
         if (Y.Lang.isFunction(callback)) {
@@ -619,22 +613,29 @@ proto = {
             callback = null;
         }
 
+        if (Y.config.cacheUse) {
+            while ((name = args[i++])) {
+                if (!Env._attached[name]) {
+                    provisioned = false;
+                    break;
+                }
+            }
+
+            if (provisioned) {
+                if (args.length) {
+                }
+                Y._notify(callback, ALREADY_DONE, args);
+                return Y;
+            }
+        }
+
         if (Y._loading) {
             Y._useQueue = Y._useQueue || new Y.Queue();
             Y._useQueue.add([args, callback]);
         } else {
-            key = args.join();
-
-            if (Y.config.cacheUse && Y.Env.serviced[key]) {
-                Y._notify(callback, ALREADY_DONE, args);
-            } else {
-                Y._use(args, function(Y, response) {
-                    if (Y.config.cacheUse) {
-                        Y.Env.serviced[key] = true;
-                    }
-                    Y._notify(callback, response, args);
-                });
-            }
+            Y._use(args, function(Y, response) {
+                Y._notify(callback, response, args);
+            });
         }
 
         return Y;
@@ -658,7 +659,7 @@ proto = {
             this._attach(['yui-base']);
         }
 
-        var len, loader, handleBoot,
+        var len, loader, handleBoot, handleRLS,
             Y = this,
             G_ENV = YUI.Env,
             mods = G_ENV.mods,
@@ -813,13 +814,30 @@ proto = {
 
         } else if (len && Y.config.use_rls) {
 
+            G_ENV._rls_queue = G_ENV._rls_queue || new Y.Queue();
+
             // server side loader service
-            Y.Get.script(Y._rls(args), {
-                onEnd: function(o) {
-                    handleLoader(o);
-                },
-                data: args
-            });
+            handleRLS = function(instance, argz) {
+                G_ENV._rls_in_progress = true;
+                instance.Get.script(instance._rls(argz), {
+                    onEnd: function(o) {
+                        handleLoader(o);
+                        G_ENV._rls_in_progress = false;
+                        if (G_ENV._rls_queue.size()) {
+                            G_ENV._rls_queue.next()();
+                        }
+                    },
+                    data: argz
+                });
+            };
+
+            if (G_ENV._rls_in_progress) {
+                G_ENV._rls_queue.add(function() {
+                    handleRLS(Y, args);
+                });
+            } else {
+                handleRLS(Y, args);
+            }
 
         } else if (boot && len && Y.Get && !Env.bootstrapped) {
 
@@ -1503,6 +1521,7 @@ proto = {
  * @property cacheUse
  * @type boolean
  * @default true
+ * @deprecated no longer used
  */
 
 /**
@@ -1576,61 +1595,53 @@ YUI.add('yui-base', function(Y) {
  */
 
 /**
- * Provides the language utilites and extensions used by the library
+ * Provides core language utilites and extensions used throughout YUI.
+ *
  * @class Lang
  * @static
  */
-Y.Lang = Y.Lang || {};
 
-var L = Y.Lang,
+var L = Y.Lang || (Y.Lang = {}),
 
-ARRAY = 'array',
-BOOLEAN = 'boolean',
-DATE = 'date',
-ERROR = 'error',
-FUNCTION = 'function',
-NUMBER = 'number',
-NULL = 'null',
-OBJECT = 'object',
-REGEX = 'regexp',
-STRING = 'string',
 STRING_PROTO = String.prototype,
-TOSTRING = Object.prototype.toString,
-UNDEFINED = 'undefined',
+TOSTRING     = Object.prototype.toString,
 
 TYPES = {
-    'undefined' : UNDEFINED,
-    'number' : NUMBER,
-    'boolean' : BOOLEAN,
-    'string' : STRING,
-    '[object Function]' : FUNCTION,
-    '[object RegExp]' : REGEX,
-    '[object Array]' : ARRAY,
-    '[object Date]' : DATE,
-    '[object Error]' : ERROR
+    'undefined'        : 'undefined',
+    'number'           : 'number',
+    'boolean'          : 'boolean',
+    'string'           : 'string',
+    '[object Function]': 'function',
+    '[object RegExp]'  : 'regexp',
+    '[object Array]'   : 'array',
+    '[object Date]'    : 'date',
+    '[object Error]'   : 'error'
 },
 
+SUBREGEX  = /\{\s*([^|}]+?)\s*(?:\|([^}]*))?\s*\}/g,
 TRIMREGEX = /^\s+|\s+$/g,
-EMPTYSTRING = '',
-SUBREGEX = /\{\s*([^\|\}]+?)\s*(?:\|([^\}]*))?\s*\}/g;
+
+// If either MooTools or Prototype is on the page, then there's a chance that we
+// can't trust "native" language features to actually be native. When this is
+// the case, we take the safe route and fall back to our own non-native
+// implementation.
+win           = Y.config.win,
+unsafeNatives = win && !!(win.MooTools || win.Prototype);
 
 /**
  * Determines whether or not the provided item is an array.
- * Returns false for array-like collections such as the
- * function arguments collection or HTMLElement collection
- * will return false.  Use <code>Y.Array.test</code> if you
- * want to test for an array-like collection.
+ *
+ * Returns `false` for array-like collections such as the function `arguments`
+ * collection or `HTMLElement` collections. Use `Y.Array.test()` if you want to
+ * test for an array-like collection.
+ *
  * @method isArray
- * @static
  * @param o The object to test.
  * @return {boolean} true if o is an array.
+ * @static
  */
-// L.isArray = Array.isArray || function(o) {
-//     return L.type(o) === ARRAY;
-// };
-
-L.isArray = function(o) {
-    return L.type(o) === ARRAY;
+L.isArray = (!unsafeNatives && Array.isArray) || function (o) {
+    return L.type(o) === 'array';
 };
 
 /**
@@ -1641,7 +1652,7 @@ L.isArray = function(o) {
  * @return {boolean} true if o is a boolean.
  */
 L.isBoolean = function(o) {
-    return typeof o === BOOLEAN;
+    return typeof o === 'boolean';
 };
 
 /**
@@ -1669,7 +1680,7 @@ L.isBoolean = function(o) {
  * @return {boolean} true if o is a function.
  */
 L.isFunction = function(o) {
-    return L.type(o) === FUNCTION;
+    return L.type(o) === 'function';
 };
 
 /**
@@ -1680,8 +1691,7 @@ L.isFunction = function(o) {
  * @return {boolean} true if o is a date.
  */
 L.isDate = function(o) {
-    // return o instanceof Date;
-    return L.type(o) === DATE && o.toString() !== 'Invalid Date' && !isNaN(o);
+    return L.type(o) === 'date' && o.toString() !== 'Invalid Date' && !isNaN(o);
 };
 
 /**
@@ -1703,7 +1713,7 @@ L.isNull = function(o) {
  * @return {boolean} true if o is a number.
  */
 L.isNumber = function(o) {
-    return typeof o === NUMBER && isFinite(o);
+    return typeof o === 'number' && isFinite(o);
 };
 
 /**
@@ -1718,8 +1728,8 @@ L.isNumber = function(o) {
  */
 L.isObject = function(o, failfn) {
     var t = typeof o;
-    return (o && (t === OBJECT ||
-        (!failfn && (t === FUNCTION || L.isFunction(o))))) || false;
+    return (o && (t === 'object' ||
+        (!failfn && (t === 'function' || L.isFunction(o))))) || false;
 };
 
 /**
@@ -1730,7 +1740,7 @@ L.isObject = function(o, failfn) {
  * @return {boolean} true if o is a string.
  */
 L.isString = function(o) {
-    return typeof o === STRING;
+    return typeof o === 'string';
 };
 
 /**
@@ -1741,7 +1751,7 @@ L.isString = function(o) {
  * @return {boolean} true if o is undefined.
  */
 L.isUndefined = function(o) {
-    return typeof o === UNDEFINED;
+    return typeof o === 'undefined';
 };
 
 /**
@@ -1753,10 +1763,10 @@ L.isUndefined = function(o) {
  * @return {string} the trimmed string.
  */
 L.trim = STRING_PROTO.trim ? function(s) {
-    return (s && s.trim) ? s.trim() : s;
+    return s && s.trim ? s.trim() : s;
 } : function (s) {
     try {
-        return s.replace(TRIMREGEX, EMPTYSTRING);
+        return s.replace(TRIMREGEX, '');
     } catch (e) {
         return s;
     }
@@ -1799,14 +1809,17 @@ L.trimRight = STRING_PROTO.trimRight ? function (s) {
  */
 L.isValue = function(o) {
     var t = L.type(o);
+
     switch (t) {
-        case NUMBER:
+        case 'number':
             return isFinite(o);
-        case NULL:
-        case UNDEFINED:
+
+        case 'null': // fallthru
+        case 'undefined':
             return false;
+
         default:
-            return !!(t);
+            return !!t;
     }
 };
 
@@ -1833,7 +1846,7 @@ L.isValue = function(o) {
  * @static
  */
 L.type = function(o) {
-    return TYPES[typeof o] || TYPES[TOSTRING.call(o)] || (o ? OBJECT : NULL);
+    return TYPES[typeof o] || TYPES[TOSTRING.call(o)] || (o ? 'object' : 'null');
 };
 
 /**
@@ -1848,21 +1861,21 @@ L.type = function(o) {
  * @since 3.2.0
  */
 L.sub = function(s, o) {
-    return ((s.replace) ? s.replace(SUBREGEX, function(match, key) {
-        return (!L.isUndefined(o[key])) ? o[key] : match;
-    }) : s);
+    return s.replace ? s.replace(SUBREGEX, function (match, key) {
+        return L.isUndefined(o[key]) ? match : o[key];
+    }) : s;
 };
 
 /**
  * Returns the current time in milliseconds.
+ *
  * @method now
- * @return {int} the current date
+ * @return {int} Current time in milliseconds.
  * @since 3.3.0
  */
 L.now = Date.now || function () {
-  return new Date().getTime();
+    return new Date().getTime();
 };
-
 /**
  * The YUI module contains the components required for building the YUI seed
  * file.  This includes the script loading mechanism, a simple queue, and the
@@ -1871,202 +1884,237 @@ L.now = Date.now || function () {
  * @submodule yui-base
  */
 
-
-var Native = Array.prototype, LENGTH = 'length',
+var Lang   = Y.Lang,
+    Native = Array.prototype;
 
 /**
- * Adds the following array utilities to the YUI instance.  Additional
- * array helpers can be found in the collection component.
+ * Adds utilities to the YUI instance for working with arrays. Additional array
+ * helpers can be found in the `collection` module.
+ *
  * @class Array
  */
 
 /**
- * Y.Array(o) returns an array:
- * - Arrays are return unmodified unless the start position is specified.
- * - "Array-like" collections (@see Array.test) are converted to arrays
- * - For everything else, a new array is created with the input as the sole
- *   item.
- * - The start position is used if the input is or is like an array to return
- *   a subset of the collection.
+ * `Y.Array(thing)` returns an array created from _thing_. Depending on
+ * _thing_'s type, one of the following will happen:
  *
- *   @todo this will not automatically convert elements that are also
- *   collections such as forms and selects.  Passing true as the third
- *   param will force a conversion.
+ *   - Arrays are returned unmodified unless a non-zero _startIndex_ is
+ *     specified.
+ *   - Array-like collections (see `Array.test()`) are converted to arrays.
+ *   - For everything else, a new array is created with _thing_ as the sole
+ *     item.
+ *
+ * Note: elements that are also collections, such as `<form>` and `<select>`
+ * elements, are not automatically converted to arrays. To force a conversion,
+ * pass `true` as the value of the _force_ parameter.
  *
  * @method ()
+ * @param {mixed} thing The thing to arrayify.
+ * @param {int} [startIndex=0] If non-zero and _thing_ is an array or array-like
+ *   collection, a subset of items starting at the specified index will be
+ *   returned.
+ * @param {boolean} [force=false] If `true`, _thing_ will be treated as an
+ *   array-like collection no matter what.
+ * @return {Array}
  * @static
- *   @param {object} o the item to arrayify.
- *   @param {int} startIdx if an array or array-like, this is the start index.
- *   @param {boolean} arraylike if true, it forces the array-like fork.  This
- *   can be used to avoid multiple Array.test calls.
- *   @return {Array} the resulting array.
  */
-YArray = function(o, startIdx, arraylike) {
-    var t = (arraylike) ? 2 : YArray.test(o),
-        l, a, start = startIdx || 0;
+function YArray(thing, startIndex, force) {
+    var len, result;
 
-    if (t) {
-        // IE errors when trying to slice HTMLElement collections
+    startIndex || (startIndex = 0);
+
+    if (force || YArray.test(thing)) {
+        // IE throws when trying to slice HTMLElement collections.
         try {
-            return Native.slice.call(o, start);
-        } catch (e) {
-            a = [];
-            l = o.length;
-            for (; start < l; start++) {
-                a.push(o[start]);
+            return Native.slice.call(thing, startIndex);
+        } catch (ex) {
+            result = [];
+
+            for (len = thing.length; startIndex < len; ++startIndex) {
+                result.push(thing[startIndex]);
             }
-            return a;
+
+            return result;
         }
-    } else {
-        return [o];
     }
-};
+
+    return [thing];
+}
 
 Y.Array = YArray;
 
 /**
- * Evaluates the input to determine if it is an array, array-like, or
- * something else.  This is used to handle the arguments collection
- * available within functions, and HTMLElement collections
+ * Evaluates _obj_ to determine if it's an array, an array-like collection, or
+ * something else. This is useful when working with the function `arguments`
+ * collection and `HTMLElement` collections.
+ *
+ * Note: This implementation doesn't consider elements that are also
+ * collections, such as `<form>` and `<select>`, to be array-like.
  *
  * @method test
+ * @param {object} obj Object to test.
+ * @return {int} A number indicating the results of the test:
+ *   - 0: Neither an array nor an array-like collection.
+ *   - 1: Real array.
+ *   - 2: Array-like collection.
  * @static
- *
- * @todo current implementation (intenionally) will not implicitly
- * handle html elements that are array-like (forms, selects, etc).
- *
- * @param {object} o the object to test.
- *
- * @return {int} a number indicating the results:
- * 0: Not an array or an array-like collection
- * 1: A real array.
- * 2: array-like collection.
  */
-YArray.test = function(o) {
-    var r = 0;
-    if (Y.Lang.isObject(o)) {
-        if (Y.Lang.isArray(o)) {
-            r = 1;
-        } else {
-            try {
-                // indexed, but no tagName (element) or alert (window),
-                // or functions without apply/call (Safari
-                // HTMLElementCollection bug).
-                if ((LENGTH in o) && !o.tagName && !o.alert && !o.apply) {
-                    r = 2;
-                }
+YArray.test = function (obj) {
+    var result = 0;
 
-            } catch (e) {}
-        }
-    }
-    return r;
-};
-
-/**
- * Executes the supplied function on each item in the array.
- * @method each
- * @param {Array} a the array to iterate.
- * @param {Function} f the function to execute on each item.  The
- * function receives three arguments: the value, the index, the full array.
- * @param {object} o Optional context object.
- * @static
- * @return {YUI} the YUI instance.
- */
-YArray.each = (Native.forEach) ?
-    function(a, f, o) {
-        Native.forEach.call(a || [], f, o || Y);
-        return Y;
-    } :
-    function(a, f, o) {
-        var l = (a && a.length) || 0, i;
-        for (i = 0; i < l; i = i + 1) {
-            f.call(o || Y, a[i], i, a);
-        }
-        return Y;
-    };
-
-/**
- * Returns an object using the first array as keys, and
- * the second as values.  If the second array is not
- * provided the value is set to true for each.
- * @method hash
- * @static
- * @param {Array} k keyset.
- * @param {Array} v optional valueset.
- * @return {object} the hash.
- */
-YArray.hash = function(k, v) {
-    var o = {}, l = k.length, vl = v && v.length, i;
-    for (i = 0; i < l; i = i + 1) {
-        o[k[i]] = (vl && vl > i) ? v[i] : true;
-    }
-
-    return o;
-};
-
-/**
- * Returns the index of the first item in the array
- * that contains the specified value, -1 if the
- * value isn't found.
- * @method indexOf
- * @static
- * @param {Array} a the array to search.
- * @param {any} val the value to search for.
- * @return {int} the index of the item that contains the value or -1.
- */
-YArray.indexOf = (Native.indexOf) ?
-    function(a, val) {
-        return Native.indexOf.call(a, val);
-    } :
-    function(a, val) {
-        for (var i = 0; i < a.length; i = i + 1) {
-            if (a[i] === val) {
-                return i;
+    if (Lang.isArray(obj)) {
+        result = 1;
+    } else if (Lang.isObject(obj)) {
+        try {
+            // indexed, but no tagName (element) or alert (window),
+            // or functions without apply/call (Safari
+            // HTMLElementCollection bug).
+            if ('length' in obj && !obj.tagName && !obj.alert && !obj.apply) {
+                result = 2;
             }
-        }
+        } catch (ex) {}
+    }
 
-        return -1;
-    };
+    return result;
+};
+
+/**
+ * Executes the supplied function on each item in the array. This method wraps
+ * the native ES5 `Array.forEach()` method if available.
+ *
+ * @method each
+ * @param {Array} array Array to iterate.
+ * @param {Function} fn Function to execute on each item in the array.
+ *   @param {mixed} fn.item Current array item.
+ *   @param {Number} fn.index Current array index.
+ *   @param {Array} fn.array Array being iterated.
+ * @param {Object} [thisObj] `this` object to use when calling _fn_.
+ * @return {YUI} The YUI instance.
+ * @chainable
+ * @static
+ */
+YArray.each = YArray.forEach = Native.forEach ? function (array, fn, thisObj) {
+    Native.forEach.call(array || [], fn, thisObj || Y);
+    return Y;
+} : function (array, fn, thisObj) {
+    for (var i = 0, len = (array && array.length) || 0; i < len; ++i) {
+        fn.call(thisObj || Y, array[i], i, array);
+    }
+
+    return Y;
+};
+
+/**
+ * Alias for `each`.
+ *
+ * @method forEach
+ * @static
+ */
+
+/**
+ * Returns an object using the first array as keys and the second as values. If
+ * the second array is not provided, or if it doesn't contain the same number of
+ * values as the first array, then `true` will be used in place of the missing
+ * values.
+ *
+ * @example
+ *
+ *     Y.Array.hash(['a', 'b', 'c'], ['foo', 'bar']);
+ *     // => {a: 'foo', b: 'bar', c: true}
+ *
+ * @method hash
+ * @param {Array} keys Array to use as keys.
+ * @param {Array} [values] Array to use as values.
+ * @return {Object}
+ * @static
+ */
+YArray.hash = function (keys, values) {
+    var hash = {},
+        vlen = values && values.length,
+        i, len;
+
+    for (i = 0, len = keys.length; i < len; ++i) {
+        hash[keys[i]] = vlen && vlen > i ? values[i] : true;
+    }
+
+    return hash;
+};
+
+/**
+ * Returns the index of the first item in the array that's equal (using a strict
+ * equality check) to the specified _value_, or `-1` if the value isn't found.
+ *
+ * This method wraps the native ES5 `Array.indexOf()` method if available.
+ *
+ * @method indexOf
+ * @param {Array} array Array to search.
+ * @param {any} value Value to search for.
+ * @return {Number} Index of the item strictly equal to _value_, or `-1` if not
+ *   found.
+ * @static
+ */
+YArray.indexOf = Native.indexOf ? function (array, value) {
+    // TODO: support fromIndex
+    return Native.indexOf.call(array, value);
+} : function (array, value) {
+    for (var i = 0, len = array.length; i < len; ++i) {
+        if (array[i] === value) {
+            return i;
+        }
+    }
+
+    return -1;
+};
 
 /**
  * Numeric sort convenience function.
- * Y.ArrayAssert.itemsAreEqual([1,2,3], [3,1,2].sort(Y.Array.numericSort));
+ *
+ * The native `Array.prototype.sort()` function converts values to strings and
+ * sorts them in lexicographic order, which is unsuitable for sorting numeric
+ * values. Provide `Y.Array.numericSort` as a custom sort function when you want
+ * to sort values in numeric order.
+ *
+ * @example
+ *
+ *     [42, 23, 8, 16, 4, 15].sort(Y.Array.numericSort);
+ *     // => [4, 8, 15, 16, 23, 42]
+ *
  * @method numericSort
+ * @param {Number} a First value to compare.
+ * @param {Number} b Second value to compare.
+ * @return {Number} Difference between _a_ and _b_.
  * @static
- * @param {number} a a number.
- * @param {number} b a number.
  */
-YArray.numericSort = function(a, b) {
-    return (a - b);
+YArray.numericSort = function (a, b) {
+    return a - b;
 };
 
 /**
- * Executes the supplied function on each item in the array.
- * Returning true from the processing function will stop the
- * processing of the remaining items.
+ * Executes the supplied function on each item in the array. Returning a truthy
+ * value from the function will stop the processing of remaining items.
+ *
  * @method some
- * @param {Array} a the array to iterate.
- * @param {Function} f the function to execute on each item. The function
- * receives three arguments: the value, the index, the full array.
- * @param {object} o Optional context object.
+ * @param {Array} array Array to iterate.
+ * @param {Function} fn Function to execute on each item.
+ *   @param {mixed} fn.value Current array item.
+ *   @param {Number} fn.index Current array index.
+ *   @param {Array} fn.array Array being iterated.
+ * @param {Object} [thisObj] `this` object to use when calling _fn_.
+ * @return {Boolean} `true` if the function returns a truthy value on any of the
+ *   items in the array; `false` otherwise.
  * @static
- * @return {boolean} true if the function returns true on
- * any of the items in the array.
  */
-YArray.some = (Native.some) ?
-    function(a, f, o) {
-        return Native.some.call(a, f, o);
-    } :
-    function(a, f, o) {
-        var l = a.length, i;
-        for (i = 0; i < l; i = i + 1) {
-            if (f.call(o, a[i], i, a)) {
-                return true;
-            }
+YArray.some = Native.some ? function (array, fn, thisObj) {
+    return Native.some.call(array, fn, thisObj);
+} : function (array, fn, thisObj) {
+    for (var i = 0, len = array.length; i < len; ++i) {
+        if (fn.call(thisObj, array[i], i, array)) {
+            return true;
         }
-        return false;
-    };
+    }
 
+    return false;
+};
 /**
  * The YUI module contains the components required for building the YUI
  * seed file.  This includes the script loading mechanism, a simple queue,
@@ -2164,6 +2212,8 @@ YUI.Env._loaderQueue = YUI.Env._loaderQueue || new Queue();
 
 var CACHED_DELIMITER = '__',
 
+NOT_ENUMERATED = ['toString', 'valueOf'],
+
 /*
  * IE will not enumerate native functions in a derived object even if the
  * function was overridden.  This is a workaround for specific functions
@@ -2175,12 +2225,15 @@ var CACHED_DELIMITER = '__',
  * @private
  */
 _iefix = function(r, s) {
-    var fn = s.toString;
-    if (Y.Lang.isFunction(fn) && fn != Object.prototype.toString) {
-        r.toString = fn;
+    var i, fname, fn;
+    for (i = 0; i < NOT_ENUMERATED.length; i++) {
+        fname = NOT_ENUMERATED[i];
+        fn = s[fname];
+        if (L.isFunction(fn) && fn != Object.prototype[fname]) {
+            r[fname] = fn;
+        }
     }
 };
-
 
 /**
  * Returns a new object containing all of the properties of
@@ -2332,188 +2385,264 @@ Y.cached = function(source, cache, refetch) {
  */
 
 /**
- * Adds the following Object utilities to the YUI instance
+ * Adds utilities to the YUI instance for working with objects.
+ *
  * @class Object
  */
 
-/**
- * Y.Object(o) returns a new object based upon the supplied object.
- * @method ()
- * @static
- * @param o the supplier object.
- * @return {Object} the new object.
- */
-var F = function() {},
+var hasOwn = Object.prototype.hasOwnProperty,
 
-// O = Object.create || function(o) {
-//     F.prototype = o;
-//     return new F();
-// },
+// If either MooTools or Prototype is on the page, then there's a chance that we
+// can't trust "native" language features to actually be native. When this is
+// the case, we take the safe route and fall back to our own non-native
+// implementations.
+win           = Y.config.win,
+unsafeNatives = win && !!(win.MooTools || win.Prototype),
 
-O = function(o) {
-    F.prototype = o;
-    return new F();
-},
-
-owns = function(o, k) {
-    return o && o.hasOwnProperty && o.hasOwnProperty(k);
-    // return Object.prototype.hasOwnProperty.call(o, k);
-},
-
-UNDEF,
+UNDEFINED, // <-- Note the comma. We're still declaring vars.
 
 /**
- * Extracts the keys, values, or size from an object
+ * Returns a new object that uses _obj_ as its prototype. This method wraps the
+ * native ES5 `Object.create()` method if available, but doesn't currently
+ * pass through `Object.create()`'s second argument (properties) in order to
+ * ensure compatibility with older browsers.
  *
- * @method _extract
- * @param o the object.
- * @param what what to extract (0: keys, 1: values, 2: size).
- * @return {boolean|Array} the extracted info.
+ * @method ()
+ * @param {Object} obj Prototype object.
+ * @return {Object} New object using _obj_ as its prototype.
  * @static
- * @private
  */
-_extract = function(o, what) {
-    var count = (what === 2), out = (count) ? 0 : [], i;
+O = Y.Object = (!unsafeNatives && Object.create) ? function (obj) {
+    // We currently wrap the native Object.create instead of simply aliasing it
+    // to ensure consistency with our fallback shim, which currently doesn't
+    // support Object.create()'s second argument (properties). Once we have a
+    // safe fallback for the properties arg, we can stop wrapping
+    // Object.create().
+    return Object.create(obj);
+} : (function () {
+    // Reusable constructor function for the Object.create() shim.
+    function F() {}
 
-    for (i in o) {
-        if (owns(o, i)) {
-            if (count) {
-                out++;
-            } else {
-                out.push((what) ? o[i] : i);
-            }
-        }
-    }
-
-    return out;
-};
-
-Y.Object = O;
+    // The actual shim.
+    return function (obj) {
+        F.prototype = obj;
+        return new F();
+    };
+}()),
 
 /**
- * Returns an array containing the object's keys
- * @method keys
- * @static
- * @param o an object.
- * @return {string[]} the keys.
- */
-// O.keys = Object.keys || function(o) {
-//     return _extract(o);
-// };
-
-O.keys = function(o) {
-    return _extract(o);
-};
-
-/**
- * Returns an array containing the object's values
- * @method values
- * @static
- * @param o an object.
- * @return {Array} the values.
- */
-// O.values = Object.values || function(o) {
-//     return _extract(o, 1);
-// };
-
-O.values = function(o) {
-    return _extract(o, 1);
-};
-
-/**
- * Returns the size of an object
- * @method size
- * @static
- * @param o an object.
- * @return {int} the size.
- */
-O.size = Object.size || function(o) {
-    return _extract(o, 2);
-};
-
-/**
- * Returns true if the object contains a given key
- * @method hasKey
- * @static
- * @param o an object.
- * @param k the key to query.
- * @return {boolean} true if the object contains the key.
- */
-O.hasKey = owns;
-/**
- * Returns true if the object contains a given value
- * @method hasValue
- * @static
- * @param o an object.
- * @param v the value to query.
- * @return {boolean} true if the object contains the value.
- */
-O.hasValue = function(o, v) {
-    return (Y.Array.indexOf(O.values(o), v) > -1);
-};
-
-/**
- * Determines whether or not the property was added
- * to the object instance.  Returns false if the property is not present
- * in the object, or was inherited from the prototype.
+ * Returns `true` if _key_ exists on _obj_, `false` if _key_ doesn't exist or
+ * exists only on _obj_'s prototype. This is essentially a safer version of
+ * `obj.hasOwnProperty()`.
  *
  * @method owns
+ * @param {Object} obj Object to test.
+ * @param {String} key Property name to look for.
+ * @return {Boolean} `true` if _key_ exists on _obj_, `false` otherwise.
  * @static
- * @param o {any} The object being testing.
- * @param p {string} the property to look for.
- * @return {boolean} true if the object has the property on the instance.
  */
-O.owns = owns;
+owns = O.owns = function (obj, key) {
+    return !!obj && hasOwn.call(obj, key);
+}; // <-- End of var declarations.
 
 /**
- * Executes a function on each item. The function
- * receives the value, the key, and the object
- * as parameters (in that order).
- * @method each
+ * Alias for `owns()`.
+ *
+ * @method hasKey
+ * @param {Object} obj Object to test.
+ * @param {String} key Property name to look for.
+ * @return {Boolean} `true` if _key_ exists on _obj_, `false` otherwise.
  * @static
- * @param o the object to iterate.
- * @param f {Function} the function to execute on each item. The function
- * receives three arguments: the value, the the key, the full object.
- * @param c the execution context.
- * @param proto {boolean} include proto.
- * @return {YUI} the YUI instance.
  */
-O.each = function(o, f, c, proto) {
-    var s = c || Y, i;
+O.hasKey = owns;
 
-    for (i in o) {
-        if (proto || owns(o, i)) {
-            f.call(s, o[i], i, o);
+/**
+ * Returns an array containing the object's enumerable keys. Does not include
+ * prototype keys or non-enumerable keys.
+ *
+ * Note that keys are returned in enumeration order (that is, in the same order
+ * that they would be enumerated by a `for-in` loop), which may not be the same
+ * as the order in which they were defined.
+ *
+ * This method is an alias for the native ES5 `Object.keys()` method if
+ * available.
+ *
+ * @example
+ *
+ *     Y.Object.keys({a: 'foo', b: 'bar', c: 'baz'});
+ *     // => ['a', 'b', 'c']
+ *
+ * @method keys
+ * @param {Object} obj An object.
+ * @return {String[]} Array of keys.
+ * @static
+ */
+O.keys = (!unsafeNatives && Object.keys) || (function () {
+    // IE doesn't enumerate the following keys. For compatibility, we test for
+    // this behavior and force it to enumerate them.
+    //
+    // See:
+    //   - https://developer.mozilla.org/en/ECMAScript_DontEnum_attribute#JScript_DontEnum_Bug
+    //   - http://whattheheadsaid.com/2010/10/a-safer-object-keys-compatibility-implementation
+    var hasEnumBug = !{valueOf: 0}.propertyIsEnumerable('valueOf'),
+        forceEnum  = [
+            'constructor',
+            'hasOwnProperty',
+            'isPrototypeOf',
+            'propertyIsEnumerable',
+            'toString',
+            'toLocaleString',
+            'valueOf'
+        ];
+
+    // The actual shim.
+    return function (obj) {
+        if (!Y.Lang.isObject(obj)) {
+            throw new TypeError('Object.keys called on a non-object');
+        }
+
+        var keys = [],
+            i, key, len;
+
+        for (key in obj) {
+            if (owns(obj, key)) {
+                keys.push(key);
+            }
+        }
+
+        if (hasEnumBug) {
+            for (i = 0, len = forceEnum.length; i < len; ++i) {
+                key = forceEnum[i];
+
+                if (owns(obj, key)) {
+                    keys.push(key);
+                }
+            }
+        }
+
+        return keys;
+    };
+}());
+
+/**
+ * Returns an array containing the values of the object's enumerable keys.
+ *
+ * Note that values are returned in enumeration order (that is, in the same
+ * order that they would be enumerated by a `for-in` loop), which may not be the
+ * same as the order in which they were defined.
+ *
+ * @example
+ *
+ *     Y.Object.values({a: 'foo', b: 'bar', c: 'baz'});
+ *     // => ['foo', 'bar', 'baz']
+ *
+ * @method values
+ * @param {Object} obj An object.
+ * @return {Array} Array of values.
+ * @static
+ */
+O.values = function (obj) {
+    var keys   = O.keys(obj),
+        i      = 0,
+        len    = keys.length,
+        values = [];
+
+    for (; i < len; ++i) {
+        values.push(obj[keys[i]]);
+    }
+
+    return values;
+};
+
+/**
+ * Returns the number of enumerable keys owned by an object.
+ *
+ * @method size
+ * @param {Object} obj An object.
+ * @return {Number} The object's size.
+ * @static
+ */
+O.size = function (obj) {
+    return O.keys(obj).length;
+};
+
+/**
+ * Returns `true` if the object owns an enumerable property with the specified
+ * value.
+ *
+ * @method hasValue
+ * @param {Object} obj An object.
+ * @param {any} value The value to search for.
+ * @return {Boolean} `true` if _obj_ contains _value_, `false` otherwise.
+ * @static
+ */
+O.hasValue = function (obj, value) {
+    return Y.Array.indexOf(O.values(obj), value) > -1;
+};
+
+/**
+ * Executes a function on each enumerable property in _obj_. The function
+ * receives the value, the key, and the object itself as parameters (in that
+ * order).
+ *
+ * By default, only properties owned by _obj_ are enumerated. To include
+ * prototype properties, set the _proto_ parameter to `true`.
+ *
+ * @method each
+ * @param {Object} obj Object to enumerate.
+ * @param {Function} fn Function to execute on each enumerable property.
+ *   @param {mixed} fn.value Value of the current property.
+ *   @param {String} fn.key Key of the current property.
+ *   @param {Object} fn.obj Object being enumerated.
+ * @param {Object} [thisObj] `this` object to use when calling _fn_.
+ * @param {Boolean} [proto=false] Include prototype properties.
+ * @return {YUI} the YUI instance.
+ * @chainable
+ * @static
+ */
+O.each = function (obj, fn, thisObj, proto) {
+    var key;
+
+    for (key in obj) {
+        if (proto || owns(obj, key)) {
+            fn.call(thisObj || Y, obj[key], key, obj);
         }
     }
+
     return Y;
 };
 
 /**
- * Executes a function on each item, but halts if the
- * function returns true.  The function
- * receives the value, the key, and the object
- * as paramters (in that order).
+ * Executes a function on each enumerable property in _obj_, but halts if the
+ * function returns a truthy value. The function receives the value, the key,
+ * and the object itself as paramters (in that order).
+ *
+ * By default, only properties owned by _obj_ are enumerated. To include
+ * prototype properties, set the _proto_ parameter to `true`.
+ *
  * @method some
+ * @param {Object} obj Object to enumerate.
+ * @param {Function} fn Function to execute on each enumerable property.
+ *   @param {mixed} fn.value Value of the current property.
+ *   @param {String} fn.key Key of the current property.
+ *   @param {Object} fn.obj Object being enumerated.
+ * @param {Object} [thisObj] `this` object to use when calling _fn_.
+ * @param {Boolean} [proto=false] Include prototype properties.
+ * @return {Boolean} `true` if any execution of _fn_ returns a truthy value,
+ *   `false` otherwise.
  * @static
- * @param o the object to iterate.
- * @param f {Function} the function to execute on each item. The function
- * receives three arguments: the value, the the key, the full object.
- * @param c the execution context.
- * @param proto {boolean} include proto.
- * @return {boolean} true if any execution of the function returns true,
- * false otherwise.
  */
-O.some = function(o, f, c, proto) {
-    var s = c || Y, i;
+O.some = function (obj, fn, thisObj, proto) {
+    var key;
 
-    for (i in o) {
-        if (proto || owns(o, i)) {
-            if (f.call(s, o[i], i, o)) {
+    for (key in obj) {
+        if (proto || owns(obj, key)) {
+            if (fn.call(thisObj || Y, obj[key], key, obj)) {
                 return true;
             }
         }
     }
+
     return false;
 };
 
@@ -2532,14 +2661,14 @@ O.some = function(o, f, c, proto) {
  */
 O.getValue = function(o, path) {
     if (!Y.Lang.isObject(o)) {
-        return UNDEF;
+        return UNDEFINED;
     }
 
     var i,
         p = Y.Array(path),
         l = p.length;
 
-    for (i = 0; o !== UNDEF && i < l; i++) {
+    for (i = 0; o !== UNDEFINED && i < l; i++) {
         o = o[p[i]];
     }
 
@@ -2567,14 +2696,14 @@ O.setValue = function(o, path, val) {
         ref = o;
 
     if (leafIdx >= 0) {
-        for (i = 0; ref !== UNDEF && i < leafIdx; i++) {
+        for (i = 0; ref !== UNDEFINED && i < leafIdx; i++) {
             ref = ref[p[i]];
         }
 
-        if (ref !== UNDEF) {
+        if (ref !== UNDEFINED) {
             ref[p[i]] = val;
         } else {
-            return UNDEF;
+            return UNDEFINED;
         }
     }
 
@@ -2582,19 +2711,16 @@ O.setValue = function(o, path, val) {
 };
 
 /**
- * Returns true if the object has no properties of its own
+ * Returns `true` if the object has no enumerable properties of its own.
+ *
  * @method isEmpty
+ * @param {Object} obj An object.
+ * @return {Boolean} `true` if the object is empty.
  * @static
- * @return {boolean} true if the object is empty.
  * @since 3.2.0
  */
-O.isEmpty = function(o) {
-    for (var i in o) {
-        if (owns(o, i)) {
-            return false;
-        }
-    }
-    return true;
+O.isEmpty = function (obj) {
+    return !O.keys(obj).length;
 };
 /**
  * The YUI module contains the components required for building the YUI seed
@@ -2607,13 +2733,15 @@ O.isEmpty = function(o) {
 /**
  * YUI user agent detection.
  * Do not fork for a browser if it can be avoided.  Use feature detection when
- * you can.  Use the user agent as a last resort.  UA stores a version
- * number for the browser engine, 0 otherwise.  This value may or may not map
- * to the version number of the browser using the engine.  The value is
- * presented as a float so that it can easily be used for boolean evaluation
- * as well as for looking for a particular range of versions.  Because of this,
- * some of the granularity of the version info may be lost (e.g., Gecko 1.8.0.9
- * reports 1.8).
+ * you can.  Use the user agent as a last resort.  For all fields listed
+ * as @type float, UA stores a version number for the browser engine,
+ * 0 otherwise.  This value may or may not map to the version number of
+ * the browser using the engine.  The value is presented as a float so
+ * that it can easily be used for boolean evaluation as well as for
+ * looking for a particular range of versions.  Because of this,
+ * some of the granularity of the version info may be lost.  The fields that
+ * are @type string default to null.  The API docs list the values that
+ * these fields can have.
  * @class UA
  * @static
  */
@@ -2625,7 +2753,7 @@ O.isEmpty = function(o) {
 * @returns {Object} The Y.UA object
 */
 YUI.Env.parseUA = function(subUA) {
-    
+
     var numberify = function(s) {
             var c = 0;
             return parseFloat(s.replace(/\./g, function() {
@@ -2715,6 +2843,7 @@ YUI.Env.parseUA = function(subUA) {
          * devices with the WebKit-based browser, and Opera Mini.
          * @property mobile
          * @type string
+         * @default null
          * @static
          */
         mobile: null,
@@ -2751,6 +2880,7 @@ YUI.Env.parseUA = function(subUA) {
          * General truthy check for iPad, iPhone or iPod
          * @property ios
          * @type float
+         * @default null
          * @static
          */
         ios: null,
@@ -2788,6 +2918,7 @@ YUI.Env.parseUA = function(subUA) {
          * The operating system.  Currently only detecting windows or macintosh
          * @property os
          * @type string
+         * @default null
          * @static
          */
         os: null
@@ -2877,7 +3008,13 @@ YUI.Env.parseUA = function(subUA) {
             m = ua.match(/Opera[\s\/]([^\s]*)/);
             if (m && m[1]) {
                 o.opera = numberify(m[1]);
+                m = ua.match(/Version\/([^\s]*)/);
+                if (m && m[1]) {
+                    o.opera = numberify(m[1]); // opera 10+
+                }
+
                 m = ua.match(/Opera Mini[^;]*/);
+
                 if (m) {
                     o.mobile = m[0]; // ex: Opera Mini/2.0.4509/1316
                 }
@@ -2908,7 +3045,7 @@ YUI.Env.parseUA = function(subUA) {
 Y.UA = YUI.Env.UA || YUI.Env.parseUA();
 
 
-}, '3.3.0' );
+}, '@VERSION@' );
 YUI.add('get', function(Y) {
 
 
@@ -3350,7 +3487,7 @@ Y.Get = function() {
                 // Safari 3.x supports the load event for script nodes (DOM2)
                 n.addEventListener('load', function() {
                     f(id, url);
-                });
+                }, false);
             }
 
         // FireFox and Opera support onload (but not DOM2 in FF) handlers for
@@ -3660,7 +3797,7 @@ Y.Get = function() {
 
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 YUI.add('features', function(Y) {
 
 var feature_tests = {};
@@ -3726,26 +3863,18 @@ Y.mix(Y.namespace('Features'), {
 
 /* This file is auto-generated by src/loader/meta_join.py */
 var add = Y.Features.add;
-// autocomplete-list-keys-sniff.js
+// ie-base-test.js
 add('load', '0', {
-    "test": function (Y) {
-    // Only add keyboard support to autocomplete-list if this doesn't appear to
-    // be an iOS or Android-based mobile device.
-    //
-    // There's currently no feasible way to actually detect whether a device has
-    // a hardware keyboard, so this sniff will have to do. It can easily be
-    // overridden by manually loading the autocomplete-list-keys module.
-    //
-    // Worth noting: even though iOS supports bluetooth keyboards, Mobile Safari
-    // doesn't fire the keyboard events used by AutoCompleteList, so there's
-    // no point loading the -keys module even when a bluetooth keyboard may be
-    // available.
-    return !(Y.UA.ios || Y.UA.android);
+    "name": "event-base-ie", 
+    "test": function(Y) {
+    var imp = Y.config.doc && Y.config.doc.implementation;
+    return (imp && (!imp.hasFeature('Events', '2.0')));
 }, 
-    "trigger": "autocomplete-list"
+    "trigger": "node-base"
 });
 // ie-style-test.js
 add('load', '1', {
+    "name": "dom-style-ie", 
     "test": function (Y) {
 
     var testFeature = Y.Features.test,
@@ -3776,28 +3905,53 @@ add('load', '1', {
 });
 // 0
 add('load', '2', {
+    "name": "widget-base-ie", 
     "trigger": "widget-base", 
     "ua": "ie"
 });
-// ie-base-test.js
+// autocomplete-list-keys-sniff.js
 add('load', '3', {
-    "test": function(Y) {
-    var imp = Y.config.doc && Y.config.doc.implementation;
-    return (imp && (!imp.hasFeature('Events', '2.0')));
+    "name": "autocomplete-list-keys", 
+    "test": function (Y) {
+    // Only add keyboard support to autocomplete-list if this doesn't appear to
+    // be an iOS or Android-based mobile device.
+    //
+    // There's currently no feasible way to actually detect whether a device has
+    // a hardware keyboard, so this sniff will have to do. It can easily be
+    // overridden by manually loading the autocomplete-list-keys module.
+    //
+    // Worth noting: even though iOS supports bluetooth keyboards, Mobile Safari
+    // doesn't fire the keyboard events used by AutoCompleteList, so there's
+    // no point loading the -keys module even when a bluetooth keyboard may be
+    // available.
+    return !(Y.UA.ios || Y.UA.android);
 }, 
-    "trigger": "node-base"
+    "trigger": "autocomplete-list"
 });
 // dd-gestures-test.js
 add('load', '4', {
+    "name": "dd-gestures", 
     "test": function(Y) {
     return (Y.config.win && ('ontouchstart' in Y.config.win && !Y.UA.chrome));
 }, 
     "trigger": "dd-drag"
 });
-// history-hash-ie-test.js
+// selector-test.js
 add('load', '5', {
+    "name": "selector-css2", 
     "test": function (Y) {
-    var docMode = Y.config.doc.documentMode;
+    var DOCUMENT = Y.config.doc,
+        ret = DOCUMENT && !('querySelectorAll' in DOCUMENT);
+
+    return ret;
+}, 
+    "trigger": "selector"
+});
+// history-hash-ie-test.js
+add('load', '6', {
+    "name": "history-hash-ie", 
+    "test": function (Y) {
+    var docMode = Y.config.doc && Y.config.doc.documentMode;
 
     return Y.UA.ie && (!('onhashchange' in Y.config.win) ||
             !docMode || docMode < 8);
@@ -3806,7 +3960,7 @@ add('load', '5', {
 });
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 YUI.add('rls', function(Y) {
 
 /**
@@ -3852,8 +4006,8 @@ Y._rls = function(what) {
         url;
 
     // update the request
-    rls.m = what;
-    rls.env = Y.Object.keys(YUI.Env.mods);
+    rls.m = what.sort(); // cache proxy optimization
+    rls.env = Y.Object.keys(YUI.Env.mods).sort();
     rls.tests = Y.Features.all('load', [Y]);
 
     url = Y.Lang.sub(rls_base + rls_tmpl, rls);
@@ -3867,7 +4021,7 @@ Y._rls = function(what) {
 
 
 
-}, '3.3.0' ,{requires:['get','features']});
+}, '@VERSION@' ,{requires:['get','features']});
 YUI.add('intl-base', function(Y) {
 
 /**
@@ -3955,7 +4109,7 @@ Y.mix(Y.namespace('Intl'), {
 });
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 YUI.add('yui-log', function(Y) {
 
 /**
@@ -4061,7 +4215,7 @@ INSTANCE.message = function() {
 };
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 YUI.add('yui-later', function(Y) {
 
 /**
@@ -4069,6 +4223,8 @@ YUI.add('yui-later', function(Y) {
  * @module yui
  * @submodule yui-later
  */
+
+var NO_ARGS = [];
 
 /**
  * Executes the supplied function in the context of the supplied
@@ -4086,6 +4242,10 @@ YUI.add('yui-later', function(Y) {
  * the function is executed with one parameter for each array item.
  * If you need to pass a single array parameter, it needs to be wrapped
  * in an array [myarray].
+ *
+ * Note: native methods in IE may not have the call and apply methods.
+ * In this case, it will work, but you are limited to four arguments.
+ *
  * @param periodic {boolean} if true, executes continuously at supplied
  * interval until canceled.
  * @return {object} a timer object. Call the cancel() method on this
@@ -4093,20 +4253,17 @@ YUI.add('yui-later', function(Y) {
  */
 Y.later = function(when, o, fn, data, periodic) {
     when = when || 0;
+    data = (!Y.Lang.isUndefined(data)) ? Y.Array(data) : data;
 
-    var m = fn, f, id;
-
-    if (o && Y.Lang.isString(fn)) {
-        m = o[fn];
-    }
-
-    f = !Y.Lang.isUndefined(data) ? function() {
-        m.apply(o, Y.Array(data));
-    } : function() {
-        m.call(o);
-    };
-
-    id = (periodic) ? setInterval(f, when) : setTimeout(f, when);
+    var method = (o && Y.Lang.isString(fn)) ? o[fn] : fn,
+        wrapper = function() {
+            if (!method.apply) {
+                method(data[0], data[1], data[2], data[3]);
+            } else {
+                method.apply(o, data || NO_ARGS);
+            }
+        },
+        id = (periodic) ? setInterval(wrapper, when) : setTimeout(wrapper, when);
 
     return {
         id: id,
@@ -4125,7 +4282,7 @@ Y.Lang.later = Y.later;
 
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 YUI.add('yui-throttle', function(Y) {
 
 /**
@@ -4167,77 +4324,269 @@ Y.throttle = function(fn, ms) {
 };
 
 
-}, '3.3.0' ,{requires:['yui-base']});
+}, '@VERSION@' ,{requires:['yui-base']});
 
 
-YUI.add('yui', function(Y){}, '3.3.0' ,{use:['yui-base','get','features','rls','intl-base','yui-log','yui-later','yui-throttle']});
+YUI.add('yui', function(Y){}, '@VERSION@' ,{use:['yui-base','get','features','rls','intl-base','yui-log','yui-later','yui-throttle']});
+
+/* Open closure for our modules code */
+( function (Y) {
+YUI.add('gallery-emulatehtml5', function(Y) {
 
 /* -------------------
- * emulateHTML5-loader
- */
-YUI.add(
-    'emulatehtml5-loader',
-    function (Y) {
-        Y.namespace('EmulateHTML5');
-        
-        Y.EmulateHTML5.Loader = function (config) { this.initialise(config); }
-        Y.EmulateHTML5.Loader.prototype = {
-            NAME : 'eH5-loader',
-            attr : {
-                components  : {},
-                prefix      : 'emulatehtml5',
-                namespace   : 'emulatehtml5'
+ * EmulateHTML5 base
+ * ------------------- */
+ 
+/* Options can be any of:
+ * - A string: The name of a single eH5 component to be loaded
+ * - An array of strings: The names of eH5 components to be loaded
+ * - An object: A mapping of eH5 component names to their configuration objects
+ * - A full set of eH5.Loader config options (see below)
+ *   For this choice, options.components can in turn be any of the three previous options.
+ * 
+ * NB: All eH5 component names must use *exact casing*. E.g.:
+ * - 'Loader' not 'loader'
+ * - 'DateAttribute' not 'Dataattribute'
+ *
+ * Config options:
+ * - components: An object, array or string specifying components to load,
+ *               potentially with options.
+ * - initializeComponents: Boolean of whether to instantiate each component
+ *                         object after YUI has loaded it. Default: true
+ * - callback: The callback function to be called after everything's been
+ *             loaded and initialised.
+ * - prefix: The prefix string for loading modules
+ *           (default: gallery-emulatehtml5)
+ **/
+
+// Declare global variables to make jsLint happy
+/*global window */
+/*global YUI */
+
+// Use Strict mode from ECMAScript 5 and JavaScript 1.8.5
+// Make sure you test any changes in a browser that supports strict mode! (e.g.: Fx >= 4, Chrome >= 11)
+"use strict";
+
+// Set YUI namespace
+Y.namespace( 'EmulateHTML5' );
+
+/* The main constructor
+ * This can be called with or without the "new" operator. Either way it will return an object.
+ * @return object An instanct of EmulateHTML5 native.
+ **/
+Y.EmulateHTML5 = function (config) {
+    // Initiate object if not already initiated
+    var thisOb = this;
+    if ( ! (this instanceof Y.EmulateHTML5) ) {
+        thisOb = new Y.EmulateHTML5(config);
+    }
+    // Setup the config options
+    thisOb._setupConfigOptions(config);
+    
+    thisOb.componentObs = thisOb.arg.componentObs;
+    
+    // Load components
+    thisOb.load(thisOb.args.loadComponents, thisOb.args.dontInitialize);
+    
+    return thisOb;
+};
+
+Y.EmulateHTML5.prototype = {
+    /* Default arguments */
+    arg: {
+        version: '0.2',
+        prefix: 'gallery-emulatehtml5',
+        includeCallbackFn: false,
+        initCallbackFn: false,
+        dontInitialize: {},
+        loadComponents: {},
+        componentObs: {}
+    },
+    
+    /* Loads HTML5 components
+     * It can take as arguments a components variable. See _setupComponentsOb for instructions.
+     **/
+    load: function (componentsConf, dontInitialize) {
+        // Declare variables
+        var yuiLoaderArguments = [], // A stack of all arguments to pass to Y.use
+            context = { // Object to be passed to the YUI Loader callback
+                componentsConf: componentsConf,
+                dontInitialize: dontInitialize,
+                EH5:            this
             },
-            initialise: function(config) {
-                // Merge attributes
-                this.attr = Y.merge(this.attr,config);
-                
-                var components = this.attr.components;
-                
-                // If components is a string, assume we're just loading one component
-                if(Y.Lang.isString(components)) { components = [components]; }
-                
-                // Check components is an array or object and isn't empty
-                if(!Y.Lang.isObject(components) || Y.Object.isEmpty(components)) { return false; }
-                
-                // Load chosen emulateHTML5 options
-                for(var compIndex in components) {
-                    // If "components" is an array then we simply load components with empty config
-                    // Assume it's an array to start with
-                    var configOptions = {};
-                    var componentName = components[compIndex];
-                    
-                    if(!Y.Lang.isArray(components)) {
-                        // It's not an array, so it's an object / associative array
-                        configOptions = components[compIndex];
-                        componentName = compIndex;
-                    }
-                    
-                    var lcComponentName = componentName.toLowerCase();
-                    var ucfComponentName = lcComponentName.charAt(0).toUpperCase() + lcComponentName.slice(1);
-                    
-                    // Now load the component with the config options
-                    var thisLoader = this;
-                    Y.use(
-                        this.attr.prefix + '-' + lcComponentName,
-                        function(Y) {
-                            Y[thisLoader.attr.namespace][ucfComponentName].init(configOptions);
-                        }
-                    );
-                }
+            name;
+        
+        // Get components as the default arguments merged with new ones
+        componentNames = Y.merge(this.arg.loadComponents,this._setupComponentsOb(componentNames));
+        
+        // Create strings for loading components in YUI
+        for (name in componentNames) {
+            if (componentNames.hasOwnProperty(name)) {
+                yuiLoaderArguments.push(this.arg.prefix+'-'+name.toLowerCase());
             }
         }
         
-        Y.emulateHTML5.Loader.load = function(components) {
-            var ob = new Y.emulateHTML5.Loader({ 'components': components });
+        // Add our callback function to the stack as the last argument
+        // This function will call includeCallback if it exists, and then initialize components
+        yuiLoaderArguments.push( this.bind( context, function() {
+            // Remember that the context here is our special context object 
+            var includeCallbackFn = this.EH5.arg.includeCallbackFn,
+                initFn = this._initializeComponents;
+            
+            // All components have been included by this point - call included callback
+            if(Y.Lang.isFunction(includeCallbackFn)) {includeCallbackFn(this.EH5);}
+            
+            // Now load all components
+            initFn(this.componentsConf,this.dontInitialize);
+        }) );
+        
+        // Pass all arguments on yuiLoaderArguments stack to Y.use
+        Y.use.apply(Y,yuiLoaderArguments);
+    },
+    
+    /* Set up a new object for each of the required components
+     * Then call the callback function.
+     **/
+    initializeComponents: function (componentsConf,dontInitialize) {
+        // Define variables
+        var name;
+        
+        // Check EmulateHTML5 exists
+        if ( Y.Lang.isObject(Y.EmulateHTML5) ) {
+            
+            // Load each of our new modules
+            for ( name in componentsConf ) {
+                // Check it's a valid property and it's not in "dontInitialize"
+                if ( componentsConf.hasOwnProperty(name) && this.toArray(dontInitialize).indexOf(dontInitialize,name) == -1 ) {
+                    // Check this component isn't in dontInitialize and is a function
+                    if( Y.Lang.isFunction(Y.EmulateHTML5[name])) {
+                        
+                        // Load it
+                        this.componentObs[name] = new Y.EmulateHTML5[name](componentsConf[name]);
+                        
+                    } else {
+                        
+                        // Warning - couldn't load module
+                        
+                    }
+                }
+            }
+        } else {
+            // YUI.EmulateHTML5 isn't here. Odd.
         }
-    }, 
-    '0.1'  /* module version */
-    /* Must not have dependencies, 'cos it must not run asynchronously */
-);
+        
+        // Call the callback, if supplied
+        if ( Y.Lang.isFunction(this.arg.initCallbackFn) ) { this.arg.initCallbackFn(Y); }
+    },
+    
+    /* Public helper methods
+     * ===================== */
+    
+    /* Wrap a function in the context of the current object instance
+     * The function is wrapped in a closure and then the object instanct is "apply"ed to it
+     * 
+     * This could be achieved with YUI plugins (Y.bind from Oop),
+     * But we want to make the base Y.EmulateHTML5 object as light on requirements as possible
+     * So it can be loaded efficiently.
+     * 
+     * @return function The wrapped function.
+     **/
+    bind: function (contextObject,targetFunction) {
+        // Return a closure function containing this object instance and the callback function
+        return function () {
+            callbackFunction.apply(context, arguments);
+        };
+    },
+    
+    /**
+     * Converts strings or objects to arrays
+     * @assert ("hello"): ["hello"]
+     * @assert (["hello"]): ["hello"]
+     * @assert ({hello: 'world', foo: 'bar'}): ["hello","foo"]
+     * @assert (89): [89]
+     * @assert undefined: []
+     * @assert null: []
+     * @return Array An array of length 1 containing the string
+     */
+    toArray: function(inputVar) {
+        var returnArray = [],
+            obProp;
+        
+        if(Y.Lang.isArray(inputVar)) {
+            returnArray = arrayOrString;
+        } else if(Y.Lang.isString(inputVar) || Y.Lang.isNumber(inputVar)) {
+            returnArray = [arrayOrString];
+        } else if(Y.Lang.isObject(inputVar)) {
+            for(obProp in inputVar) {
+                if(inputVar.hasOwnProperty(obProp)) {
+                    returnArray.push(obProp);
+                }
+            }
+        }
+        return returnArray;
+    },
+    
+    /* Private methods
+     * =============== */
+    
+    /* Setup the passed component options to be an object of the correct structure
+     * It can accept:
+     * - A string: The name of a single eH5 component to be loaded
+     * - An array of strings: The names of eH5 components to be loaded
+     * - An object: A mapping of eH5 component names to their configuration objects
+     * @return object
+     **/
+    _setupComponentsOb: function (components) {
+        var setupComponents = {}, index;
+        
+        if( Y.Lang.isString(components) ) {
+            // If components is a string, add it components
+            setupComponents[components] = {};
+        }
+        // If components is an array, add them to components
+        else if ( Y.Lang.isArray(components) ) {
+            for ( index in components ) {
+                if ( components.hasOwnProperty(index) ) {
+                    setupComponents[components[index]] = {};
+                }
+            }
+        }
+        return setupComponents;
+    },
+    
+    /* Takes the config options passed to the object and merges them into object arguments
+     * It can either take a "components" variable (string, array or object), or a full set of config options.
+     **/
+    _setupConfigOptions: function (newConf) {
+        // If we weren't passed anything, return false. Nothing done.
+        if ( Y.Lang.isUndefined(newConf) ) { return false; }
+        
+        if ( Y.Lang.isUndefined( newConf.components ) ) {
+            // Assume we've just been passed the components bit.
+            newConf = { components: this._setupComponentsOb(newConf) };
+        } else {
+            // Assume we have a full config object, and just setup the components bit
+            newConf.components = this._setupComponentsOb(newConf.components);
+        }
+        
+        // Merge with default arguments
+        this.arg = Y.merge(this.arg,newConf);
+        
+        // Return true - we actually do have some config options
+        return true;
+    }
+};
 
-window.EmulateHTML5.load = function(modules) {
-    YUI().use('emulatehtml5-loader', function(Y) {
-        new Y.EmulateHTML5.Loader(modules);
-    })
+
+}, '@VERSION@' );
+window.EH5 = Y.EmulateHTML5;
+/* Close YUI closure */
+} (YUI({
+groups: {
+  gallery: {
+    base    : '../../../yui3-gallery/build/',
+    modules: {
+    }
+  }
 }
+})));
