@@ -1,5 +1,16 @@
 <!doctype html>
 
+<!--
+I think we need a load of native EH5 functions:
+ - Recursive "available"
+ - Recursive "contentready"
+ - It would be good to do some benchmarks (or read the code) to work out whether it would be more efficient to group these request together. (Y.on('available',groupedFunctions,'<1stcss>[, <2ndcss> .. ]');).
+   > In which case it would probably be more efficient also to bunch contentready and available into one. Or just use contentready.
+ - We need some functionality simliar to jQuery's livequery plugin - for executing code after elements are created etc.
+   > Read the code to find out if they have a more efficient way of doing this (in IEs) than just extending native DOM methods like createElement etc. to fire events.
+   > Remember we can use DOMSubtreeModified in non-IE browsers ( need to check exactly which browsers support this ).
+-->
+
 <html>
   <head>
     <meta charset="utf-8" />
@@ -9,22 +20,124 @@
     
     <!--[if lt IE 9]><script src="../js/html5shim.js"></script><![endif]-->
     <script src="../../yui3/build/yui/yui-min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.1/jquery.min.js"></script>
+    <script src="../js/jquery.livequery.js"></script>
     <script>
       <!--
+        $('*').livequery(
+            function () {
+                //~ console.log(this);
+            }
+        );
         YUI({
             groups: {
               gallery: {
                 base    : '../../yui3-gallery/build/',
                 modules: {
                   'gallery-emulatehtml5-loader': {},
-                  'gallery-emulatehtml5-dataattribute': {}
+                  'gallery-emulatehtml5-dataattribute': {},
+                  'gallery-emulatehtml5-placeholder': {}
                 }
               }
             }
         }).use(
             'gallery-emulatehtml5-loader',
+            'node',
+            //~ 'gallery-emulatehtml5-dataattribute',
+            //~ 'gallery-emulatehtml5-placeholder',
             function (Y) {
-                Y.EmulateHTML5.Loader('DataAttribute');
+                Y.on(
+                    'available',
+                    function(Y) {
+                        //~ console.log('available',this,Y);
+                    },
+                    '*'
+                );
+                
+                Y.on(
+                    'domready',
+                    function(Y) {
+                        //~ console.log('domready',this,Y);
+                    }
+                );
+                
+                Y.on(
+                    'DOMSubtreeModified',
+                    function() {console.log('changed');},
+                    document
+                );
+                
+                // Overwrite native createElement function to make it fire an event.
+                // Hate to modify native browser DOM functionality,
+                // but I can't think of any other way to do this.
+                document.EH5oldCreateElem = document.createElement;
+                document.createElement = function(tagName) {
+                    Y.fire('eh5createElem',document);
+                    return document.EH5oldCreateElem(tagName);
+                }
+                
+                // Methods for setting data attribute values
+                // Comments largely copied from:
+                // http://www.w3.org/TR/html5/elements.html#embedding-custom-non-visible-data-with-the-data-attributes
+                
+                function setupElementDataset(elem) {
+                    // "dataset" element property returns a DOMStringMap object for the element's data-* attributes.
+                    // Hyphenated names become camel-cased. For example, data-foo-bar="" becomes element.dataset.fooBar.
+                    elem.getDOMNode().dataset = this.getNameValuePairs(elem);
+                }
+                
+                function getNameValuePairs(elem) {
+                    var attrCount, hyphenCount, matchedName, replaceChars, nameValuePairs = {}, thisName;
+                    // Getting the list of name-value pairs
+                    // ---
+                    
+                    // For each content attribute on the element whose first five characters are the string "data-"
+                    // and whose remaining characters (if any) do not include any characters
+                    // in the range U+0041 to U+005A (LATIN CAPITAL LETTER A to LATIN CAPITAL LETTER Z),
+                    // add a name-value pair to list whose name is the attribute's name with the first five characters removed
+                    // and whose value is the attribute's value.
+                    for(iter = 0; iter < elem.attributes.length; iter++) {
+                        if( matchedName = /^data-([^A-Z]+)/.exec(elem.elements.item(iter).name) ) {
+                            // For each name on the list, for each U+002D HYPHEN-MINUS character (-) in the name that
+                            // is followed by a character in the range U+0061 to U+007A (U+0061 LATIN SMALL LETTER A
+                            // to U+007A LATIN SMALL LETTER Z), remove the U+002D HYPHEN-MINUS character (-)
+                            // and replace the character that followed it by the same character converted to ASCII uppercase.
+                            // Set names to values
+                            thisName = matchedName[1];
+                            hyphenChars = thisName.match(/-[a-z]/g);
+                            console.log(thisName,hyphenChars);
+                            for( var hyphenCount = 0; hyphenCount < hyphenChars.length; hyphenCount++ ) {
+                                var hyphenChar = hyphenChars[hyphenCount];
+                                var upperChar = hyphenChar.toUpperCase().slice(1);
+                                console.log(hyphenChar, upperChar);
+                                thisName.replace( hyphenChar ,  upperChar );
+                                console.log(thisName);
+                            }
+                        }
+                    }
+                    
+                    // Return list.
+                }
+                
+                function setNamesToValues() {
+                    // Setting names to values
+                    // ---
+                }
+                
+                function deleteNames() {
+                    // If name contains a U+002D HYPHEN-MINUS character (-) followed by a character
+                    // in the range U+0061 to U+007A (U+0061 LATIN SMALL LETTER A to U+007A LATIN SMALL LETTER Z),
+                    // throw a SYNTAX_ERR exception and abort these steps.
+                    
+                    // For each character in the range U+0041 to U+005A
+                    // (U+0041 LATIN CAPITAL LETTER A to U+005A LATIN CAPITAL LETTER Z) in name,
+                    // insert a U+002D HYPHEN-MINUS character (-) before the character
+                    // and replace the character with the same character converted to ASCII lowercase.
+                    
+                    // Insert the string data- at the front of name.
+                    
+                    // Remove the attribute with the name name, if such an attribute exists. Do nothing otherwise.
+                }
             }
         );
       -->
@@ -32,7 +145,7 @@
   </head>
   
   <body>
-    <header>
+    <header data-fish="chips" data-hello="world">
       <h1>Main page header</h1>
     </header>
     
@@ -41,7 +154,7 @@
         <h1>Article heading</h1>
       </header>
       
-      <p>"Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."</p>
+      <p data-hello="fiddlesticks">"Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."</p>
       
       <section>
         <h1>Section 1 heading</h1>
